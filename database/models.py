@@ -99,15 +99,21 @@ class ReadinessScore(Base):
         return f"<ReadinessScore(company_id={self.company_id}, overall={self.overall_readiness_score})>"
     
     def calculate_overall_score(self):
-        """Calculate overall readiness score as average of all metrics"""
+        """Overall readiness = mean of *assessed* sub-scores.
+
+        A sub-score of 0 is treated as "not yet assessed" rather than a real
+        zero rating — otherwise a row with one assessed pillar (e.g. only
+        manufacturing_maturity) gets a misleadingly low overall.
+        """
         scores = [
             self.manufacturing_maturity,
             self.quality_compliance_readiness,
             self.production_scalability,
             self.defense_applicability,
-            self.responsiveness_operational_readiness
+            self.responsiveness_operational_readiness,
         ]
-        self.overall_readiness_score = sum(scores) / len(scores)
+        assessed = [s for s in scores if s and s > 0]
+        self.overall_readiness_score = sum(assessed) / len(assessed) if assessed else 0
         return self.overall_readiness_score
 
 

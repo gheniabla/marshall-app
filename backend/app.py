@@ -22,6 +22,7 @@ from database.models import Company, ReadinessScore, ManufacturingNeed, init_db,
 # Pydantic Models (Request/Response Schemas)
 # ============================================
 class ReadinessScoreSchema(BaseModel):
+    """Response shape — always emits the full set."""
     manufacturing_maturity: float = 0
     quality_compliance_readiness: float = 0
     production_scalability: float = 0
@@ -31,9 +32,22 @@ class ReadinessScoreSchema(BaseModel):
     overall_readiness_score: float = 0
     assessment_notes: Optional[str] = None
     assessed_by: Optional[str] = None
-    
+
     class Config:
         from_attributes = True
+
+
+class ReadinessScoreUpdateSchema(BaseModel):
+    """Request shape — every field optional so partial updates don't
+    zero out unset sub-scores."""
+    manufacturing_maturity: Optional[float] = None
+    quality_compliance_readiness: Optional[float] = None
+    production_scalability: Optional[float] = None
+    defense_applicability: Optional[float] = None
+    responsiveness_operational_readiness: Optional[float] = None
+    mrl_level: Optional[int] = None
+    assessment_notes: Optional[str] = None
+    assessed_by: Optional[str] = None
 
 
 class CompanySchema(BaseModel):
@@ -141,21 +155,33 @@ async def startup():
 
     # Auto-seed on first boot when the companies table is empty.
     # Disable with AUTO_SEED=0 (e.g. for tests).
-    if os.environ.get("AUTO_SEED", "1") != "0":
-        from database.models import get_session_maker
-        SessionLocal = get_session_maker()
-        db = SessionLocal()
-        try:
-            if db.query(Company).count() == 0:
-                print("Empty database detected — seeding curated SoCal defense companies...")
-                from scripts.populate_db import populate_database_from_scraper, add_sample_scores
-                populate_database_from_scraper()
-                add_sample_scores()
-                print("Seed complete.")
-        except Exception as e:
-            print(f"Auto-seed skipped: {e}")
-        finally:
-            db.close()
+    from database.models import get_session_maker
+    SessionLocal = get_session_maker()
+    db = SessionLocal()
+    try:
+        if os.environ.get("AUTO_SEED", "1") != "0" and db.query(Company).count() == 0:
+            print("Empty database detected — seeding curated SoCal defense companies...")
+            from scripts.populate_db import populate_database_from_scraper, add_sample_scores
+            populate_database_from_scraper()
+            add_sample_scores()
+            print("Seed complete.")
+
+        # Recompute overall_readiness_score under the current averaging rule.
+        # Cheap (one query, in-process compute) and fixes any rows whose
+        # stored overall is stale (e.g. partial-write artefacts).
+        fixed = 0
+        for r in db.query(ReadinessScore).all():
+            before = r.overall_readiness_score
+            r.calculate_overall_score()
+            if r.overall_readiness_score != before:
+                fixed += 1
+        if fixed:
+            db.commit()
+            print(f"Recomputed overall_readiness_score for {fixed} row(s).")
+    except Exception as e:
+        print(f"Startup maintenance skipped: {e}")
+    finally:
+        db.close()
 
 
 # ============================================
@@ -324,32 +350,24 @@ async def update_company(
 @app.post("/api/companies/{company_id}/readiness", response_model=ReadinessScoreSchema)
 async def update_readiness_score(
     company_id: int,
-    score: ReadinessScoreSchema,
+    score: ReadinessScoreUpdateSchema,
     db: Session = Depends(get_db),
     _admin: str = Depends(require_admin),
 ):
-    """Update or create readiness score for company"""
+    """Update or create readiness score for company. Partial — only fields
+    explicitly set in the request body are written."""
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
-    
-    # Get or create readiness score
+
     readiness = db.query(ReadinessScore).filter(
         ReadinessScore.company_id == company_id
     ).first()
-    
     if not readiness:
         readiness = ReadinessScore(company_id=company_id)
-    
-    # Update scores
-    readiness.manufacturing_maturity = score.manufacturing_maturity
-    readiness.quality_compliance_readiness = score.quality_compliance_readiness
-    readiness.production_scalability = score.production_scalability
-    readiness.defense_applicability = score.defense_applicability
-    readiness.responsiveness_operational_readiness = score.responsiveness_operational_readiness
-    readiness.mrl_level = score.mrl_level
-    readiness.assessment_notes = score.assessment_notes
-    readiness.assessed_by = score.assessed_by
+
+    for field, value in score.dict(exclude_unset=True).items():
+        setattr(readiness, field, value)
     
     # Calculate overall score
     readiness.calculate_overall_score()
