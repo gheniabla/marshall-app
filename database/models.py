@@ -9,9 +9,11 @@ import os
 
 # Database setup — overridable via DATABASE_URL env var (e.g. Neon Postgres in prod)
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./marshall_defense.db")
-# Render/Heroku-style "postgres://" → SQLAlchemy needs "postgresql+psycopg://"
+# Force the psycopg (v3) driver — we don't ship psycopg2.
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
 Base = declarative_base()
 
 # ============================================
