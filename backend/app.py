@@ -136,6 +136,24 @@ async def startup():
     init_db()
     print("Starting Marshall Defense Database API...")
 
+    # Auto-seed on first boot when the companies table is empty.
+    # Disable with AUTO_SEED=0 (e.g. for tests).
+    if os.environ.get("AUTO_SEED", "1") != "0":
+        from database.models import get_session_maker
+        SessionLocal = get_session_maker()
+        db = SessionLocal()
+        try:
+            if db.query(Company).count() == 0:
+                print("Empty database detected — seeding curated SoCal defense companies...")
+                from scripts.populate_db import populate_database_from_scraper, add_sample_scores
+                populate_database_from_scraper()
+                add_sample_scores()
+                print("Seed complete.")
+        except Exception as e:
+            print(f"Auto-seed skipped: {e}")
+        finally:
+            db.close()
+
 
 # ============================================
 # API Endpoints
