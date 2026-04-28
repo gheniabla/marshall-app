@@ -7,8 +7,11 @@ from sqlalchemy.orm import relationship, sessionmaker
 from datetime import datetime
 import os
 
-# Database setup
-DATABASE_URL = "sqlite:///./marshall_defense.db"
+# Database setup — overridable via DATABASE_URL env var (e.g. Neon Postgres in prod)
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./marshall_defense.db")
+# Render/Heroku-style "postgres://" → SQLAlchemy needs "postgresql+psycopg://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
 Base = declarative_base()
 
 # ============================================
@@ -142,7 +145,9 @@ class ManufacturingNeed(Base):
 # ============================================
 def get_db_engine():
     """Create and return database engine"""
-    return create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    if DATABASE_URL.startswith("sqlite"):
+        return create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    return create_engine(DATABASE_URL, pool_pre_ping=True)
 
 
 def get_session_maker():
