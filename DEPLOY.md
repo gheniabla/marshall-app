@@ -14,7 +14,11 @@ Render (web service) + Neon (Postgres). Both free tiers, no credit card.
 1. Sign up at https://render.com with GitHub.
 2. **New → Blueprint** → pick the `gheniabla/marshall-app` repo. Render reads `render.yaml`.
 3. When prompted for `DATABASE_URL`, paste the Neon connection string from step 1.
-4. Click **Apply**. First build takes ~3 minutes.
+4. In the service's **Environment** tab, add:
+   - `ADMIN_USER` — admin username (e.g. `admin`)
+   - `ADMIN_PASS` — pick a strong password
+   These gate all write endpoints (create / update / delete company, update readiness). Public reads and buyer needs intake remain open.
+5. Click **Apply**. First build takes ~3 minutes.
 
 ## 3. Seed the database (one time)
 

@@ -1,10 +1,12 @@
 """
 FastAPI Backend for Marshall Defense Company Database
 """
-from fastapi import FastAPI, Depends, HTTPException, Query
+import secrets
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, and_
 from pydantic import BaseModel
@@ -156,6 +158,32 @@ async def startup():
 
 
 # ============================================
+# Admin auth (HTTP Basic) — gates all mutating endpoints
+# ============================================
+# Set ADMIN_USER / ADMIN_PASS via env vars (e.g. Render dashboard).
+# Defaults are intentionally weak to surface the warning during local dev.
+ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_PASS = os.environ.get("ADMIN_PASS", "changeme")
+if ADMIN_PASS == "changeme":
+    print("WARNING: ADMIN_PASS not set — using default 'changeme'. Set ADMIN_PASS in env for any non-local deploy.")
+
+_basic = HTTPBasic()
+
+
+def require_admin(creds: HTTPBasicCredentials = Depends(_basic)):
+    """HTTP Basic gate. Constant-time compare to avoid timing leaks."""
+    user_ok = secrets.compare_digest(creds.username.encode(), ADMIN_USER.encode())
+    pass_ok = secrets.compare_digest(creds.password.encode(), ADMIN_PASS.encode())
+    if not (user_ok and pass_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid admin credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return creds.username
+
+
+# ============================================
 # API Endpoints
 # ============================================
 
@@ -240,7 +268,8 @@ async def get_company(company_id: int, db: Session = Depends(get_db)):
 @app.post("/api/companies", response_model=CompanySchema)
 async def create_company(
     company: CompanyCreateSchema,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
 ):
     """Create a new company"""
     # Check if company already exists
@@ -272,7 +301,8 @@ async def create_company(
 async def update_company(
     company_id: int,
     company: CompanyUpdateSchema,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
 ):
     """Update company information"""
     db_company = db.query(Company).filter(Company.id == company_id).first()
@@ -294,7 +324,8 @@ async def update_company(
 async def update_readiness_score(
     company_id: int,
     score: ReadinessScoreSchema,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
 ):
     """Update or create readiness score for company"""
     company = db.query(Company).filter(Company.id == company_id).first()
@@ -330,7 +361,11 @@ async def update_readiness_score(
 
 # --- Delete Company ---
 @app.delete("/api/companies/{company_id}")
-async def delete_company(company_id: int, db: Session = Depends(get_db)):
+async def delete_company(
+    company_id: int,
+    db: Session = Depends(get_db),
+    _admin: str = Depends(require_admin),
+):
     """Delete a company"""
     company = db.query(Company).filter(Company.id == company_id).first()
     if not company:

@@ -956,18 +956,48 @@
             document.getElementById('addCompanyForm').reset();
         }
 
+        // --- Admin auth (HTTP Basic) for mutating endpoints ---
+        function getAdminAuth(forcePrompt = false) {
+            let token = sessionStorage.getItem('marshallAdminAuth');
+            if (!token || forcePrompt) {
+                const user = prompt('Admin username:');
+                if (user === null) return null;
+                const pass = prompt('Admin password:');
+                if (pass === null) return null;
+                token = 'Basic ' + btoa(user + ':' + pass);
+                sessionStorage.setItem('marshallAdminAuth', token);
+            }
+            return token;
+        }
+
+        async function adminFetch(url, options = {}) {
+            const auth = getAdminAuth();
+            if (!auth) return null;
+            options.headers = { ...(options.headers || {}), 'Authorization': auth };
+            let resp = await fetch(url, options);
+            if (resp.status === 401) {
+                sessionStorage.removeItem('marshallAdminAuth');
+                const retryAuth = getAdminAuth(true);
+                if (!retryAuth) return resp;
+                options.headers['Authorization'] = retryAuth;
+                resp = await fetch(url, options);
+            }
+            return resp;
+        }
+
         async function submitAddCompany(e) {
             e.preventDefault();
-            
+
             const formData = new FormData(document.getElementById('addCompanyForm'));
             const data = Object.fromEntries(formData);
-            
+
             try {
-                const response = await fetch(`${API_BASE}/companies`, {
+                const response = await adminFetch(`${API_BASE}/companies`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                if (!response) return;
                 
                 if (response.ok) {
                     closeAddCompanyModal();
@@ -991,7 +1021,7 @@
                 const [m, q, p, d, r] = scores.split(',').map(s => parseFloat(s.trim()));
                 
                 try {
-                    const response = await fetch(`${API_BASE}/companies/${companyId}/readiness`, {
+                    const response = await adminFetch(`${API_BASE}/companies/${companyId}/readiness`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
@@ -1003,6 +1033,7 @@
                             assessed_by: 'Manual'
                         })
                     });
+                    if (!response) return;
                     
                     if (response.ok) {
                         loadStats();
@@ -1017,9 +1048,10 @@
         async function deleteCompany(companyId) {
             if (confirm('Are you sure you want to delete this company?')) {
                 try {
-                    const response = await fetch(`${API_BASE}/companies/${companyId}`, {
+                    const response = await adminFetch(`${API_BASE}/companies/${companyId}`, {
                         method: 'DELETE'
                     });
+                    if (!response) return;
                     
                     if (response.ok) {
                         closeCompanyModal();

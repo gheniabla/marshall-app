@@ -14,3 +14,7 @@ services:
         value: 3.11.9
       - key: DATABASE_URL
         sync: false  # set in Render dashboard to your Neon connection string
+      - key: ADMIN_USER
+        sync: false  # admin username for write endpoints
+      - key: ADMIN_PASS
+        sync: false  # admin password for write endpoints
