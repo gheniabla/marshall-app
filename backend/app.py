@@ -28,6 +28,7 @@ class ReadinessScoreSchema(BaseModel):
     defense_applicability: float = 0
     responsiveness_operational_readiness: float = 0
     mrl_level: Optional[int] = None
+    overall_readiness_score: float = 0
     assessment_notes: Optional[str] = None
     assessed_by: Optional[str] = None
     

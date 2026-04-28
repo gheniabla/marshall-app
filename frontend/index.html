@@ -572,6 +572,7 @@
                 <label for="soCalOnly" style="margin: 0; cursor: pointer;">SoCal Only</label>
             </div>
             <button class="btn-primary" onclick="openAddCompanyModal()">+ Add Company</button>
+            <button class="btn-primary" style="background:#1E2530; margin-left:8px;" onclick="adminSignOut()" title="Clear cached admin credentials">Admin sign out</button>
             <button class="btn-secondary" onclick="loadCompanies()">Refresh</button>
         </div>
 
@@ -826,7 +827,7 @@
                     </div>
                     <div>
                         <div class="score">
-                            ${company.readiness_scores ? company.readiness_scores.overall_readiness_score.toFixed(0) : '-'}
+                            ${(company.readiness_scores && company.readiness_scores.overall_readiness_score != null) ? company.readiness_scores.overall_readiness_score.toFixed(0) : '-'}
                         </div>
                     </div>
                 </div>
@@ -960,6 +961,11 @@
         }
 
         // --- Admin auth (HTTP Basic) for mutating endpoints ---
+        function adminSignOut() {
+            sessionStorage.removeItem('marshallAdminAuth');
+            alert('Admin credentials cleared. You will be prompted again on the next protected action.');
+        }
+
         function getAdminAuth(forcePrompt = false) {
             let token = sessionStorage.getItem('marshallAdminAuth');
             if (!token || forcePrompt) {
