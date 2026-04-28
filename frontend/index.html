@@ -948,6 +948,9 @@
         }
 
         function openAddCompanyModal() {
+            // Gate the modal itself: prompt for admin creds up front.
+            // Cached in sessionStorage, so subsequent opens don't re-prompt.
+            if (!getAdminAuth()) return;
             document.getElementById('addCompanyModal').style.display = 'block';
         }
 
