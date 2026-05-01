@@ -608,6 +608,28 @@
         </div>
     </div>
 
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="modal">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Admin sign-in</h2>
+                <button class="close-btn" onclick="closeAdminLoginModal()">&times;</button>
+            </div>
+            <form id="adminLoginForm" onsubmit="submitAdminLogin(event)">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" id="adminLoginUser" class="form-input" autocomplete="username" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" id="adminLoginPass" class="form-input" autocomplete="current-password" required>
+                </div>
+                <div id="adminLoginError" style="color:#c53030; font-size:13px; margin-bottom:8px; display:none;"></div>
+                <button type="submit" class="btn-primary" style="width: 100%; padding: 12px;">Sign in</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Add Company Modal -->
     <div id="addCompanyModal" class="modal">
         <div class="modal-content">
@@ -751,8 +773,10 @@
             window.addEventListener('click', (e) => {
                 const companyModal = document.getElementById('companyModal');
                 const addModal = document.getElementById('addCompanyModal');
+                const loginModal = document.getElementById('adminLoginModal');
                 if (e.target === companyModal) closeCompanyModal();
                 if (e.target === addModal) closeAddCompanyModal();
+                if (e.target === loginModal) closeAdminLoginModal();
             });
         }
 
@@ -949,10 +973,11 @@
         }
 
         function openAddCompanyModal() {
-            // Gate the modal itself: prompt for admin creds up front.
+            // Gate the modal itself: require admin creds up front.
             // Cached in sessionStorage, so subsequent opens don't re-prompt.
-            if (!getAdminAuth()) return;
-            document.getElementById('addCompanyModal').style.display = 'block';
+            ensureAdminAuth(() => {
+                document.getElementById('addCompanyModal').style.display = 'block';
+            });
         }
 
         function closeAddCompanyModal() {
@@ -961,34 +986,79 @@
         }
 
         // --- Admin auth (HTTP Basic) for mutating endpoints ---
+        let _adminLoginResolver = null;
+
         function adminSignOut() {
             sessionStorage.removeItem('marshallAdminAuth');
             alert('Admin credentials cleared. You will be prompted again on the next protected action.');
         }
 
-        function getAdminAuth(forcePrompt = false) {
-            let token = sessionStorage.getItem('marshallAdminAuth');
-            if (!token || forcePrompt) {
-                const user = prompt('Admin username:');
-                if (user === null) return null;
-                const pass = prompt('Admin password:');
-                if (pass === null) return null;
-                token = 'Basic ' + btoa(user + ':' + pass);
-                sessionStorage.setItem('marshallAdminAuth', token);
+        function openAdminLoginModal(errorMsg) {
+            const errEl = document.getElementById('adminLoginError');
+            if (errorMsg) {
+                errEl.textContent = errorMsg;
+                errEl.style.display = 'block';
+            } else {
+                errEl.textContent = '';
+                errEl.style.display = 'none';
             }
-            return token;
+            document.getElementById('adminLoginUser').value = '';
+            document.getElementById('adminLoginPass').value = '';
+            document.getElementById('adminLoginModal').style.display = 'block';
+            setTimeout(() => document.getElementById('adminLoginUser').focus(), 50);
+        }
+
+        function closeAdminLoginModal() {
+            document.getElementById('adminLoginModal').style.display = 'none';
+            if (_adminLoginResolver) {
+                const r = _adminLoginResolver;
+                _adminLoginResolver = null;
+                r(null);
+            }
+        }
+
+        function submitAdminLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById('adminLoginUser').value;
+            const pass = document.getElementById('adminLoginPass').value;
+            const token = 'Basic ' + btoa(user + ':' + pass);
+            sessionStorage.setItem('marshallAdminAuth', token);
+            document.getElementById('adminLoginModal').style.display = 'none';
+            if (_adminLoginResolver) {
+                const r = _adminLoginResolver;
+                _adminLoginResolver = null;
+                r(token);
+            }
+        }
+
+        function promptAdminLogin(errorMsg) {
+            return new Promise((resolve) => {
+                _adminLoginResolver = resolve;
+                openAdminLoginModal(errorMsg);
+            });
+        }
+
+        async function ensureAdminAuth(onSuccess) {
+            const token = sessionStorage.getItem('marshallAdminAuth');
+            if (token) { onSuccess && onSuccess(); return token; }
+            const fresh = await promptAdminLogin();
+            if (fresh) onSuccess && onSuccess();
+            return fresh;
         }
 
         async function adminFetch(url, options = {}) {
-            const auth = getAdminAuth();
-            if (!auth) return null;
-            options.headers = { ...(options.headers || {}), 'Authorization': auth };
+            let token = sessionStorage.getItem('marshallAdminAuth');
+            if (!token) {
+                token = await promptAdminLogin();
+                if (!token) return null;
+            }
+            options.headers = { ...(options.headers || {}), 'Authorization': token };
             let resp = await fetch(url, options);
             if (resp.status === 401) {
                 sessionStorage.removeItem('marshallAdminAuth');
-                const retryAuth = getAdminAuth(true);
-                if (!retryAuth) return resp;
-                options.headers['Authorization'] = retryAuth;
+                const retry = await promptAdminLogin('Invalid credentials. Please try again.');
+                if (!retry) return resp;
+                options.headers['Authorization'] = retry;
                 resp = await fetch(url, options);
             }
             return resp;
