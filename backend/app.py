@@ -194,18 +194,25 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "changeme")
 if ADMIN_PASS == "changeme":
     print("WARNING: ADMIN_PASS not set — using default 'changeme'. Set ADMIN_PASS in env for any non-local deploy.")
 
-_basic = HTTPBasic()
+# auto_error=False so FastAPI doesn't auto-emit a 401 with `WWW-Authenticate: Basic`
+# when the header is missing — that response would trigger the browser's native
+# Basic-auth dialog on top of our JS prompt, causing repeated popups.
+_basic = HTTPBasic(auto_error=False)
 
 
-def require_admin(creds: HTTPBasicCredentials = Depends(_basic)):
+def require_admin(creds: HTTPBasicCredentials | None = Depends(_basic)):
     """HTTP Basic gate. Constant-time compare to avoid timing leaks."""
+    if creds is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin credentials required",
+        )
     user_ok = secrets.compare_digest(creds.username.encode(), ADMIN_USER.encode())
     pass_ok = secrets.compare_digest(creds.password.encode(), ADMIN_PASS.encode())
     if not (user_ok and pass_ok):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin credentials",
-            headers={"WWW-Authenticate": "Basic"},
         )
     return creds.username
 
