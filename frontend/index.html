@@ -1067,8 +1067,19 @@
         async function submitAddCompany(e) {
             e.preventDefault();
 
-            const formData = new FormData(document.getElementById('addCompanyForm'));
+            const form = document.getElementById('addCompanyForm');
+            const formData = new FormData(form);
             const data = Object.fromEntries(formData);
+
+            // Checkbox: FormData omits unchecked, sends 'on' for checked.
+            // Backend expects a real boolean.
+            data.is_southern_california = form.querySelector('[name="is_southern_california"]').checked;
+
+            // Drop empty strings so Optional[str] fields stay None server-side
+            // (and don't trip Optional[int]/Optional[bool] validators if any).
+            for (const k of Object.keys(data)) {
+                if (data[k] === '') delete data[k];
+            }
 
             try {
                 const response = await adminFetch(`${API_BASE}/companies`, {
@@ -1077,18 +1088,28 @@
                     body: JSON.stringify(data)
                 });
                 if (!response) return;
-                
+
                 if (response.ok) {
                     closeAddCompanyModal();
                     loadStats();
                     loadCompanies();
-                } else {
-                    const error = await response.json();
-                    alert('Error: ' + error.detail);
+                    return;
                 }
+
+                // Surface the real error body so we can see 422/500 details.
+                const text = await response.text();
+                let detail = text;
+                try {
+                    const j = JSON.parse(text);
+                    detail = typeof j.detail === 'string'
+                        ? j.detail
+                        : JSON.stringify(j.detail || j);
+                } catch (_) { /* not JSON, keep raw text */ }
+                console.error('Add company failed', response.status, detail);
+                alert(`Error (${response.status}): ${detail}`);
             } catch (error) {
                 console.error('Error adding company:', error);
-                alert('Error adding company');
+                alert('Error adding company: ' + (error && error.message ? error.message : error));
             }
         }
 
