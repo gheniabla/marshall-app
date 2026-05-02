@@ -194,17 +194,6 @@ ADMIN_PASS = os.environ.get("ADMIN_PASS", "changeme")
 if ADMIN_PASS == "changeme":
     print("WARNING: ADMIN_PASS not set — using default 'changeme'. Set ADMIN_PASS in env for any non-local deploy.", flush=True)
 
-# Boot-time diagnostic so we can confirm what the running process sees.
-# Prints the username (low-sensitivity) plus a fingerprint of the password
-# (length + first/last char) — enough to spot whitespace/typo issues without
-# leaking the secret.
-def _fp(s: str) -> str:
-    if not s:
-        return "<empty>"
-    return f"len={len(s)} first={s[0]!r} last={s[-1]!r}"
-
-print(f"[admin-auth] configured ADMIN_USER={ADMIN_USER!r} ADMIN_PASS fingerprint: {_fp(ADMIN_PASS)}", flush=True)
-
 # auto_error=False so FastAPI doesn't auto-emit a 401 with `WWW-Authenticate: Basic`
 # when the header is missing — that response would trigger the browser's native
 # Basic-auth dialog on top of our JS prompt, causing repeated popups.
@@ -214,7 +203,6 @@ _basic = HTTPBasic(auto_error=False)
 def require_admin(creds: HTTPBasicCredentials | None = Depends(_basic)):
     """HTTP Basic gate. Constant-time compare to avoid timing leaks."""
     if creds is None:
-        print("[admin-auth] no Authorization header on request", flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Admin credentials required",
@@ -222,15 +210,6 @@ def require_admin(creds: HTTPBasicCredentials | None = Depends(_basic)):
     user_ok = secrets.compare_digest(creds.username.encode(), ADMIN_USER.encode())
     pass_ok = secrets.compare_digest(creds.password.encode(), ADMIN_PASS.encode())
     if not (user_ok and pass_ok):
-        # Diagnostic: log received username + password fingerprint vs configured.
-        # Username is treated as low-sensitivity here to debug the mismatch.
-        print(
-            f"[admin-auth] REJECT received_user={creds.username!r} "
-            f"received_pass_fp=({_fp(creds.password)}) "
-            f"expected_user={ADMIN_USER!r} expected_pass_fp=({_fp(ADMIN_PASS)}) "
-            f"user_ok={user_ok} pass_ok={pass_ok}",
-            flush=True,
-        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin credentials",
