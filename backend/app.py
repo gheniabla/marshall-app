@@ -341,10 +341,9 @@ async def create_company(
         if len(parts) > 1:
             state = parts[-1].strip()[:2].upper()
     
-    db_company = Company(
-        **company.dict(),
-        state=state
-    )
+    payload = company.dict()
+    payload["state"] = state
+    db_company = Company(**payload)
     db.add(db_company)
     db.commit()
     db.refresh(db_company)
